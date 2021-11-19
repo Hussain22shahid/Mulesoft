@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:salesforce="http://www.mulesoft.org/schema/mule/salesforce"
+	xmlns:batch="http://www.mulesoft.org/schema/mule/batch"
+	xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:os="http://www.mulesoft.org/schema/mule/os" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/batch http://www.mulesoft.org/schema/mule/batch/current/mule-batch.xsd
+http://www.mulesoft.org/schema/mule/salesforce http://www.mulesoft.org/schema/mule/salesforce/current/mule-salesforce.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+	<db:config name="Database_Config" doc:name="Database Config" doc:id="fa89f519-6718-4058-a27f-a549b1999cda" >
+		<db:my-sql-connection host="localhost" port="3306" user="root" password="Admin22" database="mule" />
+	</db:config>
+	<salesforce:sfdc-config name="Salesforce_Config" doc:name="Salesforce Config" doc:id="c2404927-23d4-405d-a175-1c4ce029d19d" >
+		<salesforce:basic-connection username="hussainibe22@ymail.com" password="Hussain22" securityToken="NrHbY1MYil6L6pfKv5diwqrdZ" />
+	</salesforce:sfdc-config>
+	<flow name="insertIntoSalesForce" doc:id="e2d64c62-033b-4fc1-b6e0-d161e8cfac8d" >
+		<scheduler doc:name="Scheduler" doc:id="99adea59-5ad8-4dd2-bdef-2732a422d711" >
+			<scheduling-strategy >
+				<fixed-frequency frequency="30" timeUnit="SECONDS"/>
+			</scheduling-strategy>
+		</scheduler>
+		<os:retrieve doc:name="Retrieve" doc:id="8ae985ec-c570-433e-8e8a-f64ce902191a" key="createdTime" target="createdTime">
+			<os:default-value ><![CDATA[19950101010101]]></os:default-value>
+		</os:retrieve>
+		<db:select doc:name="Select" doc:id="3e37cca7-1d21-42cc-b096-d5b57de5c328" config-ref="Database_Config">
+			<db:sql ><![CDATA[select * from accounts_sf where CreatedTime > :CT]]></db:sql>
+			<db:input-parameters ><![CDATA[#[{
+	CT: vars.createdTime
+}]]]></db:input-parameters>
+		</db:select>
+		<choice doc:name="Choice" doc:id="13195f99-055d-47e5-a2c0-af129c9956c9" >
+			<when expression="#[sizeOf(payload) &gt; 0]">
+				<os:store doc:name="Store" doc:id="157057b5-7d87-4aee-96ec-c6bdd7bb658d" key="createdTime">
+					<os:value ><![CDATA[#[max(payload.CreatedTime)]]]></os:value>
+				</os:store>
+				<batch:job jobName="BatchJob2" doc:id="63550935-e009-4466-b2c4-90fb3f109ac5" maxFailedRecords="-1">
+					<batch:process-records >
+						<batch:step name="Batch_Step1" doc:id="6e5bd57d-0c4f-4fc9-a087-81331559261e" >
+							<salesforce:query doc:name="Query" doc:id="a3c67b6e-9eb4-4308-9efd-31decd68708b" config-ref="Salesforce_Config" target="accountNumbers">
+								<salesforce:salesforce-query ><![CDATA[SELECT AccountNumber FROM Account WHERE AccountNumber= ':AN']]></salesforce:salesforce-query>
+								<salesforce:parameters ><![CDATA[#[{
+	AN: payload.AccountNumber as String
+}]]]></salesforce:parameters>
+							</salesforce:query>
+						</batch:step>
+						<batch:step name="Batch_Step2" doc:id="30cd1fd2-4f24-4d2c-b4a1-f41d1af5f922" acceptExpression="#[sizeOf(vars.accountNumbers)==0]">
+							<salesforce:create type="Account" doc:name="Create" doc:id="d02e7708-5274-40c3-941b-106cd56b78e2" config-ref="Salesforce_Config">
+								<salesforce:records ><![CDATA[#[output application/java
+---
+[{
+	Name: payload.Name,
+	BillingStreet: payload.Street,
+	BillingCity: payload.City,
+	BillingState: payload.State,
+	BillingPostalCode: payload.Pincode as String,
+	BillingCountry: payload.Country,
+	Phone: payload.Phone,
+	AccountNumber: payload.AccountNumber default ""
+}]]]]></salesforce:records>
+							</salesforce:create>
+						</batch:step>
+						<batch:step name="Batch_Step3" doc:id="db61c646-09e6-4a3a-8d0b-e125f716267c" acceptPolicy="ONLY_FAILURES">
+							<logger level="ERROR" doc:name="Logger" doc:id="a8a9682b-80c7-489f-930e-1ac9b9c83200" message="#[payload]"/>
+						</batch:step>
+					</batch:process-records>
+					<batch:on-complete >
+						<logger level="INFO" doc:name="Logger" doc:id="1e8cf827-dfef-4376-8cb5-e89dbea53774" message="#[output application/json --- payload]"/>
+					</batch:on-complete>
+				</batch:job>
+			</when>
+			<otherwise >
+				<logger level="INFO" doc:name="Logger" doc:id="05e2deb2-b90f-418d-af83-601b291f98e2" message="No new data to insert. Hence skipping!"/>
+			</otherwise>
+		</choice>
+	</flow>
+	<flow name="updateIntoSalesForce" doc:id="8086f5d4-fae6-4a47-883a-1b0c44310831" >
+		<scheduler doc:name="Scheduler" doc:id="4c5421a6-c4c3-48ca-b4c7-ff2be1d11914" >
+			<scheduling-strategy >
+				<fixed-frequency frequency="30" timeUnit="SECONDS"/>
+			</scheduling-strategy>
+		</scheduler>
+		<os:retrieve doc:name="Retrieve" doc:id="e3d87043-2bbf-4b07-bb60-dfa80221df1d" key="updatedTime" target="updatedTime">
+			<os:default-value><![CDATA[19950101010101]]></os:default-value>
+		</os:retrieve>
+		<db:select doc:name="Select" doc:id="fb63fd87-c944-4e5e-a9b1-bc34cc6402d6" config-ref="Database_Config" >
+			<db:sql ><![CDATA[select * from accounts_sf where UpdatedTime > :UT]]></db:sql>
+			<db:input-parameters ><![CDATA[#[{
+	UT: vars.updatedTime
+}]]]></db:input-parameters>
+		</db:select>
+		<choice doc:name="Choice" doc:id="4046f721-f63d-445f-aacd-669031c0144e" >
+			<when expression="#[sizeOf(payload) &gt; 0]" >
+				<os:store doc:name="Store" doc:id="ca3e9d13-5f7a-448b-95c4-1f8c0855bc30" key="updatedTime">
+					<os:value><![CDATA[#[max(payload.UpdatedTime)]]]></os:value>
+				</os:store>
+				<batch:job jobName="BatchJob1" doc:id="92c98308-c231-483e-88a0-51710285bef3" maxFailedRecords="-1" >
+					<batch:process-records >
+						<batch:step name="Step1" doc:id="8d38976a-c5d6-45d5-bf27-51a5ecf6c2cd">
+							<salesforce:query doc:name="select id query" doc:id="7db1b909-3d3d-4e01-9654-72e94fefe8c5" config-ref="Salesforce_Config" target="varPayload">
+								<salesforce:salesforce-query><![CDATA[SELECT Id FROM Account WHERE AccountNumber=':AN']]></salesforce:salesforce-query>
+								<salesforce:parameters><![CDATA[#[{
+	AN: payload.AccountNumber as String
+}]]]></salesforce:parameters>
+							</salesforce:query>
+							<salesforce:update doc:name="Update" doc:id="463c2a29-7777-427e-a7b8-c36ab4d31e1f" config-ref="Salesforce_Config" type="Account">
+								<salesforce:records ><![CDATA[#[output application/java
+---
+vars.varPayload map ( varPayload , indexOfVarPayload ) -> {
+	Id: varPayload.Id,
+	Name: payload.Name,
+	BillingStreet: payload.Street,
+	BillingCity: payload.City,
+	BillingState: payload.State,
+	BillingCountry: payload.Country,
+	Phone: payload.Phone,
+	AccountNumber: payload.AccountNumber
+}]]]></salesforce:records>
+							</salesforce:update>
+						</batch:step>
+						<batch:step name="Step2" doc:id="69b3744c-a137-4ee4-9a38-798e873c8b1d" acceptPolicy="ONLY_FAILURES" >
+							<logger level="ERROR" doc:name="Logger" doc:id="ede6c1ff-5297-4089-b884-d1ae2a13c931" message="#[payload]" />
+						</batch:step>
+					</batch:process-records>
+					<batch:on-complete >
+						<logger level="INFO" doc:name="Logger" doc:id="84fea316-1bcb-44f9-95c2-60b9a2c62124" message="#[output application/json --- payload]" />
+					</batch:on-complete>
+				</batch:job>
+			</when>
+			<otherwise >
+				<logger level="INFO" doc:name="Logger" doc:id="b91c5a15-d408-4c12-93f9-ef5c09eb04d4" message="No new data to insert. Hence skipping!" />
+			</otherwise>
+		</choice>
+	</flow>
+	<flow name="deleteSalesForce" doc:id="35eea084-6f8c-4ef6-abf9-3440aa106775" >
+		<scheduler doc:name="Scheduler" doc:id="0256add2-ccf9-4d25-8f75-ff2795b6c2b2" >
+			<scheduling-strategy >
+				<fixed-frequency frequency="30" timeUnit="SECONDS"/>
+			</scheduling-strategy>
+		</scheduler>
+		<db:select doc:name="Select" doc:id="b643d96a-f665-488e-80da-2a8f760f6f57" config-ref="Database_Config">
+			<db:sql ><![CDATA[select AccountNumber from accounts_sf where MarkedForDeletion='yes']]></db:sql>
+		</db:select>
+		<choice doc:name="Choice" doc:id="1127046b-4518-452e-9331-8dfd59ce608b" >
+			<when expression="#[sizeOf(payload)&gt;0]">
+				<batch:job jobName="Batch_Job3" doc:id="1be90cae-d53f-4cc0-8ed5-a3e16fbcab25" maxFailedRecords="-1">
+			<batch:process-records>
+				<batch:step name="Batch_Step1" doc:id="02f33ff6-5bfe-49e1-8df0-281838dd72f0">
+					<salesforce:query doc:name="Query" doc:id="2744075f-1b33-438f-b09c-9afd3c87b1d7" config-ref="Salesforce_Config">
+						<salesforce:salesforce-query><![CDATA[SELECT Id FROM Account WHERE AccountNumber=':AN']]></salesforce:salesforce-query>
+						<salesforce:parameters><![CDATA[#[{
+	AN: payload.AccountNumber as String
+}]]]></salesforce:parameters>
+					</salesforce:query>
+							<salesforce:delete doc:name="Delete" doc:id="21f53a3f-5782-4d32-bc16-21d7a842f895" config-ref="Salesforce_Config">
+								<salesforce:ids ><![CDATA[#[payload.Id]]]></salesforce:ids>
+							</salesforce:delete>
+				</batch:step>
+				<batch:step name="Batch_Step2" doc:id="8a288632-9a2f-4926-b7d8-16de5976c9fd" acceptPolicy="ONLY_FAILURES" >
+							<logger level="ERROR" doc:name="Logger" doc:id="25fe7e28-beb9-4942-a7bb-9dc84db250f0" message="#[payload]"/>
+						</batch:step>
+			</batch:process-records>
+			<batch:on-complete>
+				<db:delete doc:name="Delete" doc:id="d850dab2-0dfa-471a-a543-334ea15a53c1" config-ref="Database_Config">
+							<db:sql ><![CDATA[delete from accounts_sf where MarkedForDeletion='yes']]></db:sql>
+						</db:delete>
+						<logger level="INFO" doc:name="Logger" doc:id="47554be6-9bf8-4558-8896-4f2dac931a66" message="#[output application/json --- payload]" />
+			</batch:on-complete>
+		</batch:job>
+			</when>
+			<otherwise >
+				<logger level="INFO" doc:name="Logger" doc:id="7719fa3d-d051-4055-a64b-1b4d3ae58b6d" message="No new data to delete. Hence skipping this time!"/>
+			</otherwise>
+		</choice>
+	</flow>
+</mule>

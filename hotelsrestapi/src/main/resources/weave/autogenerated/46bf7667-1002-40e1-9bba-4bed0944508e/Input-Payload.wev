@@ -1,0 +1,12 @@
+%dw 2.0
+
+type auto_46bf7667_1002_40e1_9bba_4bed0944508e_Input_Payload = {
+  address?: String, 
+  city?: String, 
+  ID?: Number, 
+  pricePerDay?: Number, 
+  hotelName?: String, 
+  emptyRooms?: Number, 
+  _?: Any
+}
+

@@ -1,0 +1,12 @@
+%dw 2.0
+
+type auto_f1523b65_bb9e_43d1_96ea_7dd0a334cdbc_Output_Payload = {
+  address?: String, 
+  city?: String, 
+  ID?: Number, 
+  pricePerDay?: Number, 
+  hotelName?: String, 
+  emptyRooms?: Number, 
+  _?: Any
+}
+
